@@ -31,7 +31,15 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                println!("Window redraw requested");
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.render();
+                }
+            }
+
+            WindowEvent::Resized(size) => {
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.resize(size.width, size.height);
+                }
             }
 
             _ => (),
