@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use wgpu::Device;
 use wgpu::Queue;
+use wgpu::RenderPipeline;
 use wgpu::Surface;
 use wgpu::SurfaceConfiguration;
 use winit::window::Window;
@@ -10,6 +11,7 @@ pub struct Renderer {
     device: Device,
     queue: Queue,
     config: SurfaceConfiguration,
+    render_pipeline: RenderPipeline,
 }
 
 impl Renderer {
@@ -26,10 +28,48 @@ impl Renderer {
 
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Triangle Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
+        });
+
+        let vertex_state = wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        };
+
         let size = window.inner_size();
         let config = surface
             .get_default_config(&adapter, size.width, size.height)
             .unwrap();
+
+        let color_target = wgpu::ColorTargetState {
+            format: config.format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+        };
+
+        let fragment_state = wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(color_target)],
+            compilation_options: Default::default(),
+        };
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Triangle Render Pipeline"),
+            layout: None,
+            vertex: vertex_state,
+            fragment: Some(fragment_state),
+            primitive: Default::default(),
+            multisample: Default::default(),
+            multiview_mask: None,
+            depth_stencil: None,
+            cache: None,
+        });
 
         if size.width > 0 && size.height > 0 {
             surface.configure(&device, &config);
@@ -40,6 +80,7 @@ impl Renderer {
             device,
             queue,
             config,
+            render_pipeline,
         };
     }
 
@@ -93,7 +134,9 @@ impl Renderer {
         };
 
         {
-            let _render_pass = encoder.begin_render_pass(&pass_descriptor);
+            let mut render_pass = encoder.begin_render_pass(&pass_descriptor);
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
 
         let command_buffer = encoder.finish();
