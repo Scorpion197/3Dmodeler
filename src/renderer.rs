@@ -1,10 +1,19 @@
 use std::sync::Arc;
+use wgpu::Buffer;
 use wgpu::Device;
 use wgpu::Queue;
 use wgpu::RenderPipeline;
 use wgpu::Surface;
 use wgpu::SurfaceConfiguration;
+use wgpu::util::DeviceExt;
 use winit::window::Window;
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
 
 pub struct Renderer {
     surface: Surface<'static>,
@@ -12,6 +21,9 @@ pub struct Renderer {
     queue: Queue,
     config: SurfaceConfiguration,
     render_pipeline: RenderPipeline,
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+    num_indices: u32,
 }
 
 impl Renderer {
@@ -29,15 +41,74 @@ impl Renderer {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
 
+        let vertices = [
+            // bottom left
+            Vertex {
+                position: [-0.5, -0.5, 0.0],
+                color: [1.0, 0.0, 0.0], // red
+            },
+            // bottom right
+            Vertex {
+                position: [0.5, -0.5, 0.0],
+                color: [0.0, 1.0, 0.0], // green
+            },
+            // top righ
+            Vertex {
+                position: [0.5, 0.5, 0.0],
+                color: [0.0, 0.0, 1.0], // blue
+            },
+            // top left
+            Vertex {
+                position: [-0.5, 0.5, 0.0],
+                color: [1.0, 1.0, 1.0], // white
+            },
+        ];
+
+        let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+        let num_indices = indices.len() as u32;
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Triangle Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
         });
 
+        let vertex_attributes = [
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            // read the color attribute: the next 3 floats after the position
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 12,
+                shader_location: 1,
+            },
+        ];
+
+        // new layout which describes how positions are arranged throughout the buffer
+        let vertex_buffer_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &vertex_attributes,
+        };
+
         let vertex_state = wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[],
+            buffers: &[Some(vertex_buffer_layout)],
             compilation_options: Default::default(),
         };
 
@@ -81,6 +152,9 @@ impl Renderer {
             queue,
             config,
             render_pipeline,
+            vertex_buffer,
+            index_buffer,
+            num_indices,
         };
     }
 
@@ -136,7 +210,9 @@ impl Renderer {
         {
             let mut render_pass = encoder.begin_render_pass(&pass_descriptor);
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         let command_buffer = encoder.finish();
