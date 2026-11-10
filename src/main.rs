@@ -1,13 +1,18 @@
 mod app;
+mod camera;
+mod mesh;
 mod renderer;
+mod scene;
 
 use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
-fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", app::HELP);
 
-    let mut app = App::default();
-    event_loop.run_app(&mut app).unwrap();
+    let event_loop = EventLoop::new()?;
+    event_loop.set_control_flow(ControlFlow::Wait);
+    event_loop.run_app(&mut App::default())?;
+
+    Ok(())
 }
